@@ -1,0 +1,40 @@
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+.zed
+.phpactor.json
+.fleet
+
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
+/public/hot
+/public/fonts-manifest.dev.json
+
+# Build artifacts (we build these in the Docker image, not from local)
+/public/build
+/public/js
+/public/css
+
+# Environment (loaded at runtime by Docker Compose)
+.env
+.env.backup
+.env.production
+.env.testing
+
+# Misc
+.phpunit.cache
+.phpunit.result.cache
+auth.json
+Homestead.json
+Homestead.yaml
