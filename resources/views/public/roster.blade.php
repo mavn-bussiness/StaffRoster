@@ -49,6 +49,58 @@
             });
         </script>
 
+        {{-- Nurse search --}}
+        <div class="mb-6">
+            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2">Or search by nurse name</label>
+            <div class="relative">
+                <input type="text" id="nurse-search" placeholder="Type to search nurses..." autocomplete="off"
+                       class="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-[--color-primary-500]">
+                <div id="nurse-search-results" class="absolute z-10 hidden w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                </div>
+            </div>
+        </div>
+
+        <script>
+            (function() {
+                const input = document.getElementById('nurse-search');
+                const resultsEl = document.getElementById('nurse-search-results');
+                let timeoutId;
+
+                input.addEventListener('input', function() {
+                    clearTimeout(timeoutId);
+                    const q = this.value.trim();
+                    if (!q) {
+                        resultsEl.innerHTML = '';
+                        resultsEl.classList.add('hidden');
+                        return;
+                    }
+                    timeoutId = setTimeout(() => {
+                        fetch('{{ route('public.nurses.search') }}?q=' + encodeURIComponent(q))
+                            .then(r => r.json())
+                            .then(nurses => {
+                                if (!nurses.length) {
+                                    resultsEl.innerHTML = '<div class="px-3 py-2 text-sm text-gray-500">No nurses found</div>';
+                                } else {
+                                    resultsEl.innerHTML = nurses.map(n =>
+                                        '<a href="' + n.url + '" class="block px-3 py-2 text-sm text-gray-800 hover:bg-gray-50">' +
+                                        '<div class="font-medium">' + n.name + '</div>' +
+                                        '<div class="text-xs text-gray-500">' + (n.grade || '') + ' · ' + n.unit + '</div>' +
+                                        '</a>'
+                                    ).join('');
+                                }
+                                resultsEl.classList.remove('hidden');
+                            });
+                    }, 300);
+                });
+
+                document.addEventListener('click', function(e) {
+                    if (!input.contains(e.target) && !resultsEl.contains(e.target)) {
+                        resultsEl.classList.add('hidden');
+                    }
+                });
+            })();
+        </script>
+
         @if (!isset($unit))
             {{-- Landing state --}}
             <div class="card p-12 text-center text-gray-400">
@@ -73,18 +125,27 @@
                     'E' => 'bg-amber-100 text-amber-800',
                     'N' => 'bg-indigo-100 text-indigo-800',
                     'O' => 'bg-gray-100 text-gray-500',
+                    'L' => 'bg-pink-100 text-pink-900',
                 ];
                 $codeLabels = ['D' => 'Day', 'E' => 'Evening', 'N' => 'Night', 'O' => 'Off'];
+                $leaveTypeLabels = [
+                    'annual' => 'Annual',
+                    'sick' => 'Sick',
+                    'maternity' => 'Maternity',
+                    'compassionate' => 'Compassionate',
+                    'other' => 'Other',
+                ];
             @endphp
 
             <h2 class="text-sm font-semibold text-gray-700 mb-4">{{ $unit->name }} — Published Rosters</h2>
 
             @foreach ($periodsData as $item)
                 @php
-                    $period  = $item['period'];
-                    $dates   = $item['dates'];
-                    $nurses  = $item['nurses'];
-                    $byNurse = $item['byNurse'];
+                    $period          = $item['period'];
+                    $dates           = $item['dates'];
+                    $nurses          = $item['nurses'];
+                    $byNurse         = $item['byNurse'];
+                    $leaveSegments   = $item['leaveSegments'] ?? [];
                 @endphp
 
                 <div class="card mb-6 overflow-hidden">
@@ -114,6 +175,25 @@
                             </thead>
                             <tbody class="divide-y divide-gray-50">
                                 @foreach ($nurses as $nurse)
+                                    @php
+                                        // Build leave map: date => [type, isStart, span]
+                                        $nurseLeaveSegments = $leaveSegments[$nurse->id] ?? [];
+                                        $leaveByDate = [];
+                                        foreach ($nurseLeaveSegments as $seg) {
+                                            $segStart = $seg['start'];
+                                            $segEnd = $seg['end'];
+                                            $segPeriod = \Carbon\CarbonPeriod::create($segStart, $segEnd);
+                                            $segSpan = $segPeriod->count();
+                                            foreach ($segPeriod as $day) {
+                                                $ds = $day->toDateString();
+                                                $leaveByDate[$ds] = [
+                                                    'type' => $seg['type'],
+                                                    'isStart' => $ds === $segStart->toDateString(),
+                                                    'span' => $segSpan,
+                                                ];
+                                            }
+                                        }
+                                    @endphp
                                     <tr class="hover:bg-gray-50/50">
                                         <td class="px-3 py-2 font-medium text-gray-700 border-r border-gray-100 sticky left-0 bg-white">
                                             {{ $nurse->name }}
@@ -122,17 +202,33 @@
                                             @endif
                                         </td>
                                         @foreach ($dates as $date)
-                                            @php $shift = $byNurse[$nurse->id][$date->toDateString()] ?? null; @endphp
-                                            <td class="px-1 py-2 text-center border-r border-gray-100 last:border-r-0 {{ $date->isWeekend() ? 'bg-blue-50/30' : '' }}">
-                                                @if ($shift)
-                                                    <span class="inline-flex w-7 h-7 rounded-md items-center justify-center font-bold text-xs {{ $pillColors[$shift->code] ?? 'bg-gray-100 text-gray-500' }}"
-                                                          title="{{ $codeLabels[$shift->code] ?? $shift->code }}">
-                                                        {{ $shift->code }}
+                                            @php
+                                                $dateStr = $date->toDateString();
+                                                $leaveInfo = $leaveByDate[$dateStr] ?? null;
+                                                $shift = $byNurse[$nurse->id][$dateStr] ?? null;
+                                            @endphp
+                                            @if ($leaveInfo && ! $leaveInfo['isStart'])
+                                                @continue
+                                            @endif
+                                            @php $leaveLabel = $leaveInfo ? strtoupper(($leaveTypeLabels[$leaveInfo['type']] ?? ucfirst($leaveInfo['type'])).' LEAVE') : null; @endphp
+                                            @if ($leaveInfo)
+                                                <td colspan="{{ $leaveInfo['span'] }}" class="px-1 py-2 text-center border-r border-gray-100 last:border-r-0 bg-pink-50/70" title="{{ $leaveLabel }}">
+                                                    <span class="inline-flex items-center justify-center font-bold text-xs bg-pink-100 text-pink-900 px-1 py-0.5 rounded-md whitespace-nowrap">
+                                                        {{ $leaveLabel }}
                                                     </span>
-                                                @else
-                                                    <span class="text-gray-200">—</span>
-                                                @endif
-                                            </td>
+                                                </td>
+                                            @else
+                                                <td class="px-1 py-2 text-center border-r border-gray-100 last:border-r-0 {{ $date->isWeekend() ? 'bg-blue-50/30' : '' }}">
+                                                    @if ($shift)
+                                                        <span class="inline-flex w-7 h-7 rounded-md items-center justify-center font-bold text-xs {{ $pillColors[$shift->code] ?? 'bg-gray-100 text-gray-500' }}"
+                                                              title="{{ $codeLabels[$shift->code] ?? $shift->code }}">
+                                                            {{ $shift->code }}
+                                                        </span>
+                                                    @else
+                                                        <span class="text-gray-200">—</span>
+                                                    @endif
+                                                </td>
+                                            @endif
                                         @endforeach
                                     </tr>
                                 @endforeach
@@ -145,6 +241,15 @@
                             <span class="inline-flex items-center gap-1.5 text-xs text-gray-500">
                                 <span class="w-6 h-6 rounded-md flex items-center justify-center font-bold text-[11px] {{ $pillColors[$code] }}">{{ $code }}</span>
                                 {{ $label }}
+                            </span>
+                        @endforeach
+                        <span class="inline-flex items-center gap-1.5 text-xs text-gray-500">
+                            <span class="w-6 h-6 rounded-md flex items-center justify-center font-bold text-[11px] bg-pink-100 text-pink-900">L</span>
+                            On Leave
+                        </span>
+                        @foreach ($leaveTypeLabels as $type => $label)
+                            <span class="inline-flex items-center gap-1.5 text-xs text-gray-500">
+                                <span class="w-6 h-6 rounded-md flex items-center justify-center font-bold text-[9px] bg-pink-100 text-pink-900 truncate px-0.5" title="{{ $label }}">{{ $label }}</span>
                             </span>
                         @endforeach
                     </div>

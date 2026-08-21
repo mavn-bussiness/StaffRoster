@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Nurses\Tables;
 
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -37,6 +38,11 @@ class NursesTable
             ->defaultSort('name')
             ->filters([])
             ->recordActions([
+                Action::make('view_roster')
+                    ->label('View Roster')
+                    ->icon('heroicon-o-calendar')
+                    ->url(fn ($record) => route('nurse.roster', $record))
+                    ->openUrlInNewTab(),
                 EditAction::make(),
                 DeleteAction::make()
                     ->visible(fn () => auth()->user()?->role === 'admin'),

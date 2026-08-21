@@ -23,17 +23,45 @@
             </div>
         </div>
 
-        @forelse ($periods as $period)
+        @forelse ($periodsData as $item)
             @php
-                $shiftsByDate = $period->shifts->keyBy(fn ($s) => $s->shift_date->toDateString());
-                $dates = \Carbon\CarbonPeriod::create($period->period_start, $period->period_end);
+                $period  = $item['period'];
+                $dates   = $item['dates'];
+                $byNurse = $item['byNurse'];
+                $leaveSegments = $item['leaveSegments'] ?? [];
+                $nurseShifts = $byNurse[$nurse->id] ?? collect();
+
+                $codeLabels = ['D' => 'Day', 'E' => 'Evening', 'N' => 'Night', 'O' => 'Off'];
                 $pillColors = [
                     'D' => 'bg-blue-100 text-blue-800',
                     'E' => 'bg-amber-100 text-amber-800',
                     'N' => 'bg-indigo-100 text-indigo-800',
                     'O' => 'bg-gray-100 text-gray-500',
                 ];
-                $codeLabels = ['D' => 'Day', 'E' => 'Evening', 'N' => 'Night', 'O' => 'Off'];
+                $leaveTypeLabels = [
+                    'annual' => 'Annual',
+                    'sick' => 'Sick',
+                    'maternity' => 'Maternity',
+                    'compassionate' => 'Compassionate',
+                    'other' => 'Other',
+                ];
+
+                // Build leave map: date => [type, isStart, span]
+                $leaveByDate = [];
+                foreach ($leaveSegments as $seg) {
+                    $segStart = $seg['start'];
+                    $segEnd = $seg['end'];
+                    $segPeriod = \Carbon\CarbonPeriod::create($segStart, $segEnd);
+                    $segSpan = $segPeriod->count();
+                    foreach ($segPeriod as $day) {
+                        $ds = $day->toDateString();
+                        $leaveByDate[$ds] = [
+                            'type' => $seg['type'],
+                            'isStart' => $ds === $segStart->toDateString(),
+                            'span' => $segSpan,
+                        ];
+                    }
+                }
             @endphp
 
             <div class="card mb-5 overflow-hidden">
@@ -42,7 +70,7 @@
                         {{ $period->period_start->format('d M Y') }} – {{ $period->period_end->format('d M Y') }}
                     </span>
                     <span class="badge {{ $period->status === 'submitted' ? 'badge-green' : 'badge-blue' }}">
-                        {{ ucfirst(str_replace('_', ' ', $period->status)) }}
+                        {{ $period->statusLabel() }}
                     </span>
                 </div>
 
@@ -61,17 +89,35 @@
                         <tbody>
                             <tr>
                                 @foreach ($dates as $date)
-                                    @php $shift = $shiftsByDate[$date->toDateString()] ?? null; @endphp
-                                    <td class="px-1 py-2 text-center border-r border-gray-100 last:border-r-0 {{ $date->isWeekend() ? 'bg-blue-50/30' : '' }}">
-                                        @if ($shift)
-                                            <span class="inline-flex w-8 h-8 rounded-md items-center justify-center font-bold text-sm {{ $pillColors[$shift->code] ?? 'bg-gray-100 text-gray-500' }}"
-                                                  title="{{ $codeLabels[$shift->code] ?? $shift->code }}">
-                                                {{ $shift->code }}
+                                    @php
+                                        $dateStr = $date->toDateString();
+                                        $leaveInfo = $leaveByDate[$dateStr] ?? null;
+                                    @endphp
+                                    @if ($leaveInfo && ! $leaveInfo['isStart'])
+                                        @continue
+                                    @endif
+                                    @php
+                                        $leaveLabel = $leaveInfo ? strtoupper(($leaveTypeLabels[$leaveInfo['type']] ?? ucfirst($leaveInfo['type'])).' LEAVE') : null;
+                                    @endphp
+                                    @if ($leaveInfo)
+                                        <td colspan="{{ $leaveInfo['span'] }}" class="px-1 py-2 text-center border-r border-gray-100 last:border-r-0 bg-pink-50/70" title="{{ $leaveLabel }}">
+                                            <span class="inline-flex items-center justify-center font-bold text-xs bg-pink-100 text-pink-900 px-1 py-0.5 rounded-md whitespace-nowrap">
+                                                {{ $leaveLabel }}
                                             </span>
-                                        @else
-                                            <span class="text-gray-300">—</span>
-                                        @endif
-                                    </td>
+                                        </td>
+                                    @else
+                                        @php $shift = $nurseShifts[$dateStr] ?? null; @endphp
+                                        <td class="px-1 py-2 text-center border-r border-gray-100 last:border-r-0 {{ $date->isWeekend() ? 'bg-blue-50/30' : '' }}">
+                                            @if ($shift)
+                                                <span class="inline-flex w-8 h-8 rounded-md items-center justify-center font-bold text-sm {{ $pillColors[$shift->code] ?? 'bg-gray-100 text-gray-500' }}"
+                                                      title="{{ $codeLabels[$shift->code] ?? $shift->code }}">
+                                                    {{ $shift->code }}
+                                                </span>
+                                            @else
+                                                <span class="text-gray-300">—</span>
+                                            @endif
+                                        </td>
+                                    @endif
                                 @endforeach
                             </tr>
                         </tbody>
@@ -83,6 +129,15 @@
                         <span class="inline-flex items-center gap-1.5 text-xs text-gray-500">
                             <span class="w-6 h-6 rounded-md flex items-center justify-center font-bold text-[11px] {{ $pillColors[$code] }}">{{ $code }}</span>
                             {{ $label }}
+                        </span>
+                    @endforeach
+                    <span class="inline-flex items-center gap-1.5 text-xs text-gray-500">
+                        <span class="w-6 h-6 rounded-md flex items-center justify-center font-bold text-[11px] bg-pink-100 text-pink-900">L</span>
+                        On Leave
+                    </span>
+                    @foreach ($leaveTypeLabels as $type => $label)
+                        <span class="inline-flex items-center gap-1.5 text-xs text-gray-500">
+                            <span class="w-6 h-6 rounded-md flex items-center justify-center font-bold text-[9px] bg-pink-100 text-pink-900 truncate px-0.5" title="{{ $label }}">{{ $label }}</span>
                         </span>
                     @endforeach
                 </div>

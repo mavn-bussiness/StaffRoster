@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', [PublicRosterController::class, 'index'])->name('public.roster');
 Route::get('/roster', fn () => redirect()->route('public.roster'));
 Route::get('/roster/unit/{unit}', [PublicRosterController::class, 'unit'])->name('public.roster.unit');
+Route::get('/nurses/search', [PublicRosterController::class, 'searchNurses'])->name('public.nurses.search');
 
 // --- Individual nurse roster view (no login required) ---
 Route::get('/nurse/{nurse}/roster', [NurseRosterController::class, 'show'])->name('nurse.roster');

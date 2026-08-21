@@ -1,7 +1,12 @@
 <?php
 
 use App\Livewire\InCharge\ManageNurses;
+use App\Models\LeaveRequest;
 use App\Models\Nurse;
+use App\Models\OffDayRequest;
+use App\Models\RosterPeriod;
+use App\Models\Shift;
+use App\Models\Transfer;
 use App\Models\Unit;
 use App\Models\User;
 use Livewire\Livewire;
@@ -51,6 +56,38 @@ test('ManageNurses can delete a nurse', function () {
         ->call('delete', $nurse);
 
     $this->assertDatabaseMissing('nurses', ['id' => $nurse->id]);
+});
+
+test('ManageNurses can delete a nurse with related records', function () {
+    $nurse = Nurse::factory()->create(['current_unit_id' => $this->unit->id, 'home_unit_id' => $this->unit->id]);
+    $rosterPeriod = RosterPeriod::factory()->create(['unit_id' => $this->unit->id]);
+
+    Shift::create([
+        'roster_period_id' => $rosterPeriod->id,
+        'nurse_id' => $nurse->id,
+        'shift_date' => now()->toDateString(),
+        'code' => 'D',
+    ]);
+    OffDayRequest::factory()->create(['nurse_id' => $nurse->id, 'roster_period_id' => $rosterPeriod->id]);
+    LeaveRequest::factory()->create(['nurse_id' => $nurse->id]);
+    Transfer::factory()->create([
+        'nurse_id' => $nurse->id,
+        'from_unit_id' => $this->unit->id,
+        'to_unit_id' => $this->unit->id,
+        'start_date' => now()->toDateString(),
+        'status' => 'pending',
+    ]);
+
+    $this->actingAs($this->user);
+
+    Livewire::test(ManageNurses::class)
+        ->call('delete', $nurse);
+
+    $this->assertDatabaseMissing('nurses', ['id' => $nurse->id]);
+    $this->assertDatabaseMissing('shifts', ['nurse_id' => $nurse->id]);
+    $this->assertDatabaseMissing('off_day_requests', ['nurse_id' => $nurse->id]);
+    $this->assertDatabaseMissing('leave_requests', ['nurse_id' => $nurse->id]);
+    $this->assertDatabaseMissing('transfers', ['nurse_id' => $nurse->id]);
 });
 
 test('ManageNurses search filters results', function () {

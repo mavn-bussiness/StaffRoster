@@ -7,6 +7,7 @@ use BackedEnum;
 use Filament\Pages\Page;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Livewire\Attributes\Url;
 use UnitEnum;
 
 class OnDuty extends Page
@@ -21,6 +22,14 @@ class OnDuty extends Page
 
     protected static ?string $title = 'On Duty Today';
 
+    #[Url]
+    public ?string $date = null;
+
+    public function boot(): void
+    {
+        $this->date ??= Carbon::today()->toDateString();
+    }
+
     public static function canAccess(): bool
     {
         return in_array(auth()->user()?->role, ['admin', 'area_manager', 'head_nursing']);
@@ -28,16 +37,23 @@ class OnDuty extends Page
 
     public function getOnDutyByUnit(): Collection
     {
-        return Shift::with(['nurse.currentUnit'])
-            ->whereDate('shift_date', Carbon::today())
+        $user = auth()->user();
+
+        $query = Shift::with(['nurse.currentUnit'])
+            ->whereDate('shift_date', Carbon::parse($this->date))
             ->where('code', '!=', 'O')
-            ->whereHas('rosterPeriod', fn ($q) => $q->whereIn('status', ['agreed', 'notified', 'submitted']))
-            ->get()
+            ->whereHas('rosterPeriod', fn ($q) => $q->whereIn('status', ['agreed', 'notified', 'submitted']));
+
+        if ($user?->role === 'area_manager' && $user->unit_id) {
+            $query->whereHas('nurse', fn ($q) => $q->where('current_unit_id', $user->unit_id));
+        }
+
+        return $query->get()
             ->groupBy(fn ($shift) => $shift->nurse->currentUnit->name ?? 'Unassigned');
     }
 
     public function getDate(): Carbon
     {
-        return Carbon::today();
+        return Carbon::parse($this->date ?: Carbon::today()->toDateString());
     }
 }

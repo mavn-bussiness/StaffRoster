@@ -64,4 +64,14 @@ class Nurse extends Model
             'status' => Transfer::STATUS_PENDING,
         ]);
     }
+
+    protected static function booted(): void
+    {
+        static::deleting(function (Nurse $nurse) {
+            $nurse->shifts()->delete();
+            $nurse->offDayRequests()->delete();
+            $nurse->leaveRequests()->delete();
+            $nurse->transfers()->delete();
+        });
+    }
 }

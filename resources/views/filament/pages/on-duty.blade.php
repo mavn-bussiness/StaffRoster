@@ -4,14 +4,31 @@
         $date = $this->getDate();
         $shiftLabels = ['D' => 'Day', 'E' => 'Evening', 'N' => 'Night'];
         $shiftColors = ['D' => 'info', 'E' => 'warning', 'N' => 'primary'];
+        $accessLabel = match(auth()->user()?->role) {
+            'admin', 'head_nursing' => 'All Units',
+            'area_manager' => 'Your Unit Only',
+            default => '',
+        };
     @endphp
+
+    <div class="mb-4 flex items-end gap-4">
+        <div class="flex flex-col gap-1">
+            <label class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Select Date</label>
+            <input type="date"
+                   wire:model.live="date"
+                   class="block w-44 rounded-lg border border-gray-300 bg-white dark:bg-gray-800 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-[--color-primary-500]">
+        </div>
+        <span class="text-xs text-gray-500 dark:text-gray-400">
+            Scope: {{ $accessLabel }}
+        </span>
+    </div>
 
     <p class="text-sm text-gray-500 dark:text-gray-400 -mt-2 mb-4">{{ $date->format('l, d F Y') }}</p>
 
     @if ($onDutyByUnit->isEmpty())
         <x-filament::section>
             <div class="py-8 text-center text-gray-400 dark:text-gray-500">
-                No shifts recorded for today across any unit.
+                No shifts recorded for {{ $date->format('l, d F Y') }}.
             </div>
         </x-filament::section>
     @else
